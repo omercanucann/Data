@@ -1,0 +1,1 @@
+DATA_PATH = "data/netflix_titles_2021.csv"
