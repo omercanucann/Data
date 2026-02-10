@@ -6,7 +6,6 @@ import os
 
 warnings.filterwarnings("ignore")
 
-# ─── 1. Veriyi Yükle ───
 INPUT_PATH = "data/product_details.csv"
 OUTPUT_PATH = "data/cleaned_product_details.csv"
 
@@ -14,7 +13,6 @@ df = pd.read_csv(INPUT_PATH)
 print(f"Orijinal veri: {df.shape[0]} satır, {df.shape[1]} sütun")
 print(f"Sütunlar: {df.columns.tolist()}\n")
 
-# ─── 2. Sütun İsimlerini Standartlaştır ───
 df.rename(columns={
     "Uniqe Id": "product_id",
     "Product Name": "product_name",
@@ -48,7 +46,6 @@ df.rename(columns={
 
 print("✅ Sütun isimleri standartlaştırıldı.\n")
 
-# ─── 3. Duplicate (Tekrar Eden) Satırları Kaldır ───
 dup_count_before = df.duplicated().sum()
 df.drop_duplicates(inplace=True)
 dup_id_before = df.duplicated(subset=["product_id"]).sum()
@@ -57,7 +54,6 @@ df.reset_index(drop=True, inplace=True)
 print(f"✅ Tam tekrar eden satır kaldırıldı: {dup_count_before}")
 print(f"✅ Aynı product_id'ye sahip tekrar eden satır kaldırıldı: {dup_id_before}\n")
 
-# ─── 4. Fiyat Sütunlarını Temizle ───
 def clean_price(series):
     """Fiyat sütunlarını temizler: $, virgül kaldırır, aralık varsa min değeri alır."""
     def parse_price(val):
@@ -66,14 +62,11 @@ def clean_price(series):
         val = str(val).strip()
         if val == "" or val.lower() in ["nan", "none"]:
             return np.nan
-        # "$19.26 - $35.63" gibi aralıkları işle → min değeri al
         range_match = re.search(r"\$\s*([\d,.]+)\s*-\s*\$\s*([\d,.]+)", val)
         if range_match:
             val = range_match.group(1)
         else:
-            # Tek fiyat: $ kaldır
             val = val.replace("$", "")
-        # Virgül temizle
         val = val.replace(",", "").strip()
         if val == "" or val == ".":
             return np.nan
@@ -90,14 +83,12 @@ print(f"✅ Fiyat sütunları temizlendi.")
 print(f"   selling_price NaN: {df['selling_price'].isna().sum()}")
 print(f"   list_price NaN: {df['list_price'].isna().sum()}\n")
 
-# ─── 5. Quantity Sütununu Temizle ───
 def clean_quantity(val):
     if pd.isna(val):
         return np.nan
     val = str(val).strip().replace(",", "")
     if val == "" or val == "." or val.lower() in ["nan", "none"]:
         return np.nan
-    # Sayısal kısım çıkar
     match = re.search(r"(\d+\.?\d*)", val)
     if match:
         num = float(match.group(1))
@@ -107,7 +98,6 @@ def clean_quantity(val):
 df["quantity"] = df["quantity"].apply(clean_quantity)
 print(f"✅ Quantity sütunu temizlendi. NaN: {df['quantity'].isna().sum()}\n")
 
-# ─── 6. Shipping Weight Temizle ───
 def clean_weight(val):
     """Shipping weight'i ounce cinsinden sayıya çevirir."""
     if pd.isna(val):
@@ -115,12 +105,9 @@ def clean_weight(val):
     val = str(val).strip().lower()
     if val in ["", "nan", "none", "."]:
         return np.nan
-    # "(View shipping rates and policies)" gibi kısımları kaldır
     val = re.sub(r"\(.*?\)", "", val).strip()
     
     weight_oz = 0.0
-    
-    # Pounds eşleşmesi - en az bir rakam olmalı
     match_lbs = re.search(r"(\d[\d,.]*)\s*(pounds?|lbs?)", val)
     if match_lbs:
         num_str = match_lbs.group(1).replace(",", "")
@@ -130,8 +117,6 @@ def clean_weight(val):
                 weight_oz += float(num_str) * 16
             except ValueError:
                 pass
-
-    # Ounces eşleşmesi - en az bir rakam olmalı
     match_oz = re.search(r"(\d[\d,.]*)\s*(ounces?|oz)", val)
     if match_oz:
         num_str = match_oz.group(1).replace(",", "")
@@ -141,7 +126,6 @@ def clean_weight(val):
             except ValueError:
                 pass
     
-    # Hiçbir birim yoksa sade sayı dene (pounds varsay)
     if weight_oz == 0.0:
         clean_val = re.sub(r"[^0-9.]", "", val)
         if clean_val and clean_val != ".":
@@ -155,20 +139,17 @@ def clean_weight(val):
 df["shipping_weight_oz"] = df["shipping_weight"].apply(clean_weight)
 print(f"✅ Shipping weight sayısallaştırıldı (ounces). NaN: {df['shipping_weight_oz'].isna().sum()}\n")
 
-# ─── 7. Product Dimensions Temizle ───
 def clean_dimensions(val):
     """Boyut stringinden inches cinsinden (L, W, H) çıkarır."""
     if pd.isna(val):
         return np.nan, np.nan, np.nan
     val = str(val).strip()
-    # "6 x 7 x 0.1 inches" veya "14.7 x 11.1 x 10.2 inches" formatı
     match = re.search(r"([\d.]+)\s*x\s*([\d.]+)\s*x\s*([\d.]+)", val, re.IGNORECASE)
     if match:
         try:
             return float(match.group(1)), float(match.group(2)), float(match.group(3))
         except ValueError:
             return np.nan, np.nan, np.nan
-    # 2 boyutlu eşleşme
     match2 = re.search(r"([\d.]+)\s*x\s*([\d.]+)", val, re.IGNORECASE)
     if match2:
         try:
@@ -183,7 +164,6 @@ df["dim_width"] = dims.apply(lambda x: x[1])
 df["dim_height"] = dims.apply(lambda x: x[2])
 print(f"✅ Product dimensions ayrıştırıldı (L/W/H inches).\n")
 
-# ─── 8. Category Temizle ve Ana Kategori Çıkar ───
 def extract_main_category(val):
     if pd.isna(val):
         return "Unknown"
@@ -207,7 +187,6 @@ df["sub_category"] = df["category"].apply(extract_sub_category)
 print(f"✅ Kategoriler ayrıştırıldı.")
 print(f"   Ana kategori dağılımı:\n{df['main_category'].value_counts().head(10)}\n")
 
-# ─── 9. Product Name Temizle ───
 def clean_product_name(val):
     if pd.isna(val):
         return "Unknown"
@@ -219,12 +198,10 @@ def clean_product_name(val):
 df["product_name"] = df["product_name"].apply(clean_product_name)
 print(f"✅ Ürün isimleri temizlendi.\n")
 
-# ─── 10. Brand Temizle ───
 df["brand"] = df["brand"].fillna("Unknown").astype(str).str.strip()
 df.loc[df["brand"].isin(["", "nan", "None"]), "brand"] = "Unknown"
 print(f"✅ Brand temizlendi. Unknown sayısı: {(df['brand'] == 'Unknown').sum()}\n")
 
-# ─── 11. Boolean / Flag Sütunları Temizle ───
 def clean_boolean(val):
     if pd.isna(val):
         return False
@@ -234,7 +211,6 @@ def clean_boolean(val):
 df["is_amazon_seller"] = df["is_amazon_seller"].apply(clean_boolean)
 print(f"✅ is_amazon_seller boolean'a çevrildi. True: {df['is_amazon_seller'].sum()}\n")
 
-# ─── 12. Image URL'leri Temizle ───
 def count_images(val):
     if pd.isna(val):
         return 0
@@ -245,7 +221,6 @@ def count_images(val):
 df["image_count"] = df["image_urls"].apply(count_images)
 print(f"✅ Görsel sayısı hesaplandı. Ortalama: {df['image_count'].mean():.1f}\n")
 
-# ─── 13. Fiyat Tutarsızlıklarını Düzelt ───
 mask_swap = (df["selling_price"].notna() & df["list_price"].notna() & 
              (df["selling_price"] > df["list_price"]))
 swap_count = mask_swap.sum()
@@ -254,7 +229,6 @@ df.loc[mask_swap, ["selling_price", "list_price"]] = (
 )
 print(f"✅ Fiyat tutarsızlıkları düzeltildi (selling > list swap): {swap_count}\n")
 
-# ─── 14. Eksik Fiyatları Tahmin Et ───
 mask_no_sell = df["selling_price"].isna() & df["list_price"].notna()
 df.loc[mask_no_sell, "selling_price"] = df.loc[mask_no_sell, "list_price"] * 0.85
 filled_sell = mask_no_sell.sum()
@@ -267,13 +241,11 @@ print(f"✅ Eksik fiyat tahmini yapıldı.")
 print(f"   selling_price doldurulan: {filled_sell}")
 print(f"   list_price doldurulan: {filled_list}\n")
 
-# ─── 15. Discount Hesapla ───
 df["discount_amount"] = df["list_price"] - df["selling_price"]
 df["discount_pct"] = ((df["discount_amount"] / df["list_price"]) * 100).round(2)
 df.loc[df["discount_pct"] < 0, "discount_pct"] = 0.0
 print(f"✅ İndirim oranları hesaplandı. Ortalama indirim: %{df['discount_pct'].mean():.1f}\n")
 
-# ─── 16. About Product Temizle ───
 def clean_about_product(val):
     if pd.isna(val):
         return ""
@@ -285,7 +257,6 @@ def clean_about_product(val):
 df["about_product"] = df["about_product"].apply(clean_about_product)
 print(f"✅ About product temizlendi.\n")
 
-# ─── 17. Eksik Veri Özet Raporu ───
 print("=" * 60)
 print("📊 EKSİK VERİ ÖZETİ")
 print("=" * 60)
@@ -296,7 +267,6 @@ missing_df = missing_df[missing_df["Eksik"] > 0].sort_values("Yüzde (%)", ascen
 print(missing_df.to_string())
 print()
 
-# ─── 18. Temel İstatistikler ───
 print("=" * 60)
 print("📊 SAYISAL SÜTUN İSTATİSTİKLERİ")
 print("=" * 60)
@@ -306,7 +276,6 @@ existing_numeric = [c for c in numeric_cols if c in df.columns]
 print(df[existing_numeric].describe().round(2).to_string())
 print()
 
-# ─── 19. Aykırı Değer Tespiti (IQR Yöntemi) ───
 print("=" * 60)
 print("📊 AYKIRI DEĞER TESPİTİ (Fiyat)")
 print("=" * 60)
@@ -323,7 +292,6 @@ for col in ["selling_price", "list_price"]:
         print(f"    Aykırı değer sayısı: {outliers}")
 print()
 
-# ─── 20. Temizlenmiş Veriyi Kaydet ───
 output_cols = [
     "product_id", "product_name", "brand", "asin",
     "main_category", "sub_category", "category",
